@@ -1,6 +1,37 @@
 """Narrow native travel adapter. No SDK dependency in this module."""
 from ipaddress import IPv4Address
 
+_MISSING = object()
+PREPARE_CHARACTER = "Сначала нажмите «Продолжить» в игре и загрузите персонажа в свой игровой мир. Затем создайте хост или подключитесь к другу."
+WAIT_CHARACTER = "Персонаж ещё загружается. Дождитесь игрового мира и интерфейса, затем повторите действие."
+
+def player_world_readiness(pc):
+    """Frontend controllers are valid UObjects but cannot safely enter LAN."""
+    if pc is None:
+        return False, PREPARE_CHARACTER
+    try:
+        if pc.Pawn is None:
+            return False, PREPARE_CHARACTER
+        state = getattr(pc, "PlayerState", _MISSING)
+        if state is None:
+            return False, WAIT_CHARACTER
+        if state is not _MISSING:
+            guid = getattr(state, "ActiveCharGuid", _MISSING)
+            if guid is not _MISSING and not any(int(getattr(guid, key)) for key in ("A", "B", "C", "D")):
+                return False, WAIT_CHARACTER
+            realtime = getattr(state, "bIsInRealtimeGameplay", _MISSING)
+            if realtime is not _MISSING and not bool(realtime):
+                return False, WAIT_CHARACTER
+        get_target = getattr(pc, "GetViewTarget", None)
+        if callable(get_target):
+            target = get_target()
+            target_class = str(getattr(getattr(target, "Class", None), "Name", ""))
+            if "mainmenustation" in target_class.lower():
+                return False, PREPARE_CHARACTER
+    except (AttributeError, TypeError, ValueError, RuntimeError):
+        return False, WAIT_CHARACTER
+    return True, ""
+
 def parse_endpoint(value: str) -> str:
     if not isinstance(value, str):
         raise ValueError("Укажите IPv4-адрес хоста.")
@@ -47,8 +78,9 @@ class Session:
 
     def host(self):
         pc = self.get_pc()
-        if pc is None or pc.Pawn is None:
-            raise ValueError("Сначала загрузите персонажа в игровой мир, затем нажмите F6.")
+        ready, hint = player_world_readiness(pc)
+        if not ready:
+            raise ValueError(hint)
         level = self.resolve_map(pc) if self.resolve_map else self.gameplay.GetCurrentLevelName(pc, True)
         if not level or any(x in level.lower() for x in ("frontend", "mainmenu")):
             raise ValueError("Создать хост можно после загрузки игровой локации.")
@@ -57,6 +89,7 @@ class Session:
     def join(self, address):
         endpoint = parse_endpoint(address)
         pc = self.get_pc()
-        if pc is None:
-            raise ValueError("Дождитесь главного меню и нажмите F7 ещё раз.")
+        ready, hint = player_world_readiness(pc)
+        if not ready:
+            raise ValueError(hint)
         return self._travel(pc, endpoint, "")
