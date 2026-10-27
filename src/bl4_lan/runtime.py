@@ -94,3 +94,77 @@ class Tracker:
         else:
             result = dict(self.current)
         return dict(result, **s)
+
+
+class BuddyReconciler:
+    """Settle remote peers, then attempt native registration once per context.
+
+    Context and peer keys are strings supplied by the adapter. Only those keys
+    and readiness timestamps are retained; native objects stay in caller rows.
+    A callback failure may have partially registered a buddy, so it is terminal
+    for that key until a real context change or explicit reset.
+    """
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self._context = None
+        self._attempted = set()
+        self._ready_since = {}
+
+    def reconcile(self, context, peers, add_callback, now):
+        """Call add_callback(current_peer_row) after two ready polls and .5s.
+
+        None/empty context and None peers mean an unavailable snapshot. They
+        interrupt readiness settling but preserve prior attempt history. Empty
+        peer lists also preserve history. Results contain per-call attempted,
+        added and errors, plus observed/pending counts and attempted_total.
+        """
+        result = dict(observed=0, pending=0, attempted=0, added=0,
+                      attempted_total=len(self._attempted), errors=[])
+        if not context:
+            self._ready_since.clear()
+            return result
+        context = tuple(context)
+        if context != self._context:
+            self.reset()
+            self._context = context
+        if peers is None:
+            self._ready_since.clear()
+            result["attempted_total"] = len(self._attempted)
+            return result
+        seen = set()
+        for peer in peers:
+            key = peer["key"]
+            if key in seen:
+                continue
+            seen.add(key)
+            if not peer.get("ready", False):
+                self._ready_since.pop(key, None)
+                continue
+            if key in self._attempted:
+                continue
+            if key not in self._ready_since:
+                self._ready_since[key] = now
+                continue
+            if now - self._ready_since[key] < .5:
+                continue
+            # Mark BEFORE entering native code, including reentrant callbacks.
+            self._attempted.add(key)
+            self._ready_since.pop(key, None)
+            result["attempted"] += 1
+            try:
+                add_callback(peer)
+            except Exception as error:
+                result["errors"].append(dict(key=key,
+                    error=f"{type(error).__name__}: {error}"))
+            else:
+                result["added"] += 1
+            if self._context != context:
+                break
+        for key in self._ready_since.keys() - seen:
+            del self._ready_since[key]
+        result.update(observed=len(seen), pending=len(self._ready_since),
+                      attempted_total=len(self._attempted))
+        return result

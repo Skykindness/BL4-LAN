@@ -9,10 +9,10 @@ from mods_base import ENGINE, MODS_DIR, ButtonOption, CoopSupport, Game, build_m
 from unrealsdk.commands import add_command, remove_command
 from unrealsdk.hooks import Type, add_hook, remove_hook
 from .core import Session, parse_endpoint, player_world_readiness
-from .runtime import Tracker, startup_enabled
+from .runtime import BuddyReconciler, Tracker, startup_enabled
 from .fileio import read_request, write_json
 
-__version__ = "0.2.5"
+__version__ = "0.2.6"
 DATA = MODS_DIR.parent / "BL4-LAN-Data"
 try:
     DATA.mkdir(exist_ok=True)
@@ -29,6 +29,11 @@ LIFECYCLE_HOOKS = tuple("/Script/Engine.PlayerController:" + name for name in (
         "ClientGameHostDisconnecting", "ClientEntitlementDisconnect", "ClientForceCharacterSelectionAfterCountdown"))
 registered_lifecycle_hooks = set()
 tracker = Tracker()
+buddy_reconciler = BuddyReconciler()
+buddy_context = None
+buddy_next_scan = 0.0
+buddy_signature_valid = None
+buddy_reported_errors = set()
 session = None
 request_id = None
 last_poll = 0.0
@@ -129,6 +134,129 @@ def optional_present(obj, name, call=False):
         return (value() if call else value) is not None
     except Exception:
         return None
+
+def buddy_diagnostic(event, **details):
+    """Optional evidence must not alter a completed native UI registration."""
+    try:
+        diagnostic(event, **details)
+    except Exception:
+        pass
+
+
+def buddy_error_once(stage, error, peer=None):
+    key = (buddy_context, stage, peer)
+    if key in buddy_reported_errors:
+        return
+    buddy_reported_errors.add(key)
+    buddy_diagnostic("buddy_ui_error", stage=stage, peer=peer,
+                     context=buddy_context, error=evidence_text(error, 512))
+
+
+def buddy_path(obj):
+    """Require a native identity path; formatted object text is not an ID."""
+    path = obj._path_name()
+    if not isinstance(path, str) or not path.startswith("/"):
+        raise ValueError("Native buddy identity path is unavailable")
+    return path
+
+
+def validate_buddy_signature():
+    function = unrealsdk.find_object("Function", "/Script/OakGame.OakUIDataCollector_BuddyInfo:AddBuddy")
+    params = list(function._properties())
+    expected = (("Character", "/Script/OakGame.OakCharacter"),
+                ("PlayerState", "/Script/Engine.PlayerState"))
+    if len(params) != len(expected) or any(
+        str(prop.Name) != name or buddy_path(prop.PropertyClass) != class_path
+        for prop, (name, class_path) in zip(params, expected)
+    ):
+        raise ValueError("Unsupported native AddBuddy signature")
+
+
+def sync_buddy_ui(observed, now=None):
+    """Settle valid remote guests, then initialize their existing native HUD.
+
+    Run only on the game-thread poll. The policy retains string keys, never
+    native objects. A failed native call is terminal for that player state in
+    this controller/world/collector context because it may have partly added UI.
+    """
+    global buddy_context, buddy_next_scan, buddy_signature_valid
+    now = time.monotonic() if now is None else now
+    try:
+        if not (mod.is_enabled and tracker.role == "guest"
+                and observed.get("snapshot_available") is True
+                and observed.get("server_connection_present") is True
+                and observed.get("pawn_present") is True
+                and observed.get("player_count", 0) >= 2):
+            buddy_reconciler.reconcile(None, None, None, now)
+            return
+        pc = get_pc()
+        if pc is None or pc.Pawn is None or pc.PlayerState is None:
+            buddy_reconciler.reconcile(None, None, None, now)
+            return
+        if now < buddy_next_scan:
+            return
+        buddy_next_scan = now + 1.0
+        game_state = session.gameplay.GetGameState(pc)
+        if game_state is None or len(game_state.PlayerArray) < 2:
+            buddy_reconciler.reconcile(None, None, None, now)
+            return
+        local_player = pc.Player
+        if local_player is None:
+            buddy_reconciler.reconcile(None, None, None, now)
+            return
+        cls = unrealsdk.find_class("OakUIDataCollector_BuddyInfo")
+        collectors = [obj for obj in unrealsdk.find_all(cls, False)
+                      if not str(obj.Name).startswith("Default__") and obj.Outer == local_player]
+        if len(collectors) != 1:
+            buddy_reconciler.reconcile(None, None, None, now)
+            return
+        collector = collectors[0]
+        context = (buddy_path(pc), buddy_path(game_state), buddy_path(collector))
+        if context != buddy_context:
+            buddy_context = context
+            buddy_signature_valid = None
+            buddy_reported_errors.clear()
+        peers = []
+        for ps in list(game_state.PlayerArray)[:16]:
+            if ps is None or ps == pc.PlayerState:
+                continue
+            key = buddy_path(ps)
+            pawn = optional_value(ps, "GetPawn")
+            try:
+                pawn = pawn() if pawn else None
+                index = ps.BuddyIndex
+                ready = (pawn is not None and pawn != pc.Pawn and pawn.PlayerState == ps
+                         and isinstance(index, int) and not isinstance(index, bool) and 0 <= index <= 3)
+            except Exception:
+                pawn, ready = None, False
+            # These current-tick rows/closure are discarded after reconciliation.
+            peers.append(dict(key=key, ready=ready, pawn=pawn, player_state=ps,
+                              player_id=optional_value(ps, "PlayerId", int)))
+        if any(peer["ready"] for peer in peers) and buddy_signature_valid is None:
+            try:
+                validate_buddy_signature()
+            except Exception as error:
+                buddy_signature_valid = False
+                buddy_error_once("signature", error)
+            else:
+                buddy_signature_valid = True
+        if buddy_signature_valid is not True:
+            buddy_reconciler.reconcile(context, None, None, now)
+            return
+
+        def add_buddy(peer):
+            collector.AddBuddy(peer["pawn"], peer["player_state"])
+            buddy_diagnostic("buddy_ui_registered", context=context, peer=peer["key"],
+                             player_id=peer["player_id"])
+
+        result = buddy_reconciler.reconcile(context, peers, add_buddy, now)
+        for error in result["errors"]:
+            buddy_error_once("add", error["error"], error["key"])
+    except Exception as error:
+        # Optional SDK APIs and stale travel objects cannot break the session.
+        buddy_reconciler.reconcile(None, None, None, now)
+        buddy_error_once("scan", error)
+
 
 def native_details(pc, game_state, driver):
     """Read a small allowlist on the existing game-thread poll, never mutate it."""
@@ -376,6 +504,12 @@ def on_enable():
         record_exception()
 
 def on_disable():
+    global buddy_context, buddy_next_scan, buddy_signature_valid
+    buddy_reconciler.reset()
+    buddy_context = None
+    buddy_next_scan = 0.0
+    buddy_signature_valid = None
+    buddy_reported_errors.clear()
     remove_command("bl4lan")
     for path in FAILURE_HOOKS:
         remove_hook(path, Type.POST, "bl4_lan_failure")
@@ -404,7 +538,12 @@ def poll(obj, args, ret, func):
             request_id = request["id"]
             run(request["action"], request.get("address"), source="launcher")
         try:
-            report(current_state())
+            observed = current_state()
+            try:
+                sync_buddy_ui(observed, now=now)
+            except Exception as error:
+                buddy_error_once("poll", error)
+            report(observed)
         except (AttributeError, ValueError, IndexError):
             report(dict(tracker.current))
     except Exception:
