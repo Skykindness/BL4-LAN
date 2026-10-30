@@ -1,6 +1,6 @@
 # BL4 LAN · by skykindness
 
-[Русский](README-RU.md) · **English** · **[Download 0.2.6](https://github.com/Skykindness/BL4-LAN/releases/tag/v0.2.6)**
+[Русский](README-RU.md) · **English** · **[Download 0.2.7](https://github.com/Skykindness/BL4-LAN/releases/tag/v0.2.7)**
 
 Borderlands 4 co-op on two PCs over LAN/VPN. Both players need the same game build and mod version. Select **RU / EN** at the top of the launcher.
 
@@ -11,7 +11,7 @@ Borderlands 4 co-op on two PCs over LAN/VPN. Both players need the same game bui
 
 ## 2. Install once on each PC
 
-1. Download **BL4-LAN-v0.2.6.zip**, extract the whole archive and open **BL4-LAN.exe**.
+1. Download **BL4-LAN-v0.2.7.zip**, extract the whole archive and open **BL4-LAN.exe**.
 2. Open **Settings**, choose the game folder containing **OakGame**, then choose **Back**.
 3. With the game closed, use **Install / update** if that button appears.
 
@@ -48,7 +48,11 @@ Check the address, matching versions, loaded characters and Host ready status. A
 
 After a black screen or disconnect, keep the launcher open for up to two minutes. A report link appears at the bottom. Send one ZIP from each PC: **game folder → BL4-LAN-Data → Reports**. Reports are shared manually; no video or saves are collected.
 
-Version 0.2.6 automatically restores the guest's native teammate card and distance indicator. Verified with two game clients on one PC. Guest big-map icons remain unfixed; the party counter and avatar may be incorrect. Respawning and the full campaign have not been fully verified. This is a pre-release.
+Version 0.2.7 was checked for the guest's native in-world host name, teammate card, changing shield and rejoining after loading a character. Opening the map creates two native player objects; icon rendering at every zoom level still needs verification. These checks used two clients on one PC; two-PC LAN/VPN testing is separate.
+
+The party roster and avatars may remain incomplete. HP damage, reviving, area travel and the full campaign are not fully qualified. Native HUD restoration targets the verified game build **Oak2-Win64-4906557 / UE 5.5.4**; other builds are unverified. This is a pre-release.
+
+After leaving a session, use Continue again and load your character. If an immediate join is ignored as an active session, allow the status to settle (up to 45 seconds), then retry once.
 
 [Donate — DonationAlerts](https://www.donationalerts.com/r/skykindness) · [Source and build](https://github.com/Skykindness/BL4-LAN/blob/main/BUILD.md) · [Changelog, Russian](CHANGELOG-RU.md)
 
