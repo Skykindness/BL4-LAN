@@ -41,7 +41,7 @@ namespace BL4LAN {
                 string sdk=Path.Combine(bundle,"oak2-sdk-v0.3.zip");
                 if(!File.Exists(sdk)||Hash(File.ReadAllBytes(sdk))!=SDKHash)return InstallationState.PackageIncomplete;
                 var expected=new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase);
-                foreach(string name in new[]{"__init__.py","core.py","runtime.py","fileio.py"}){
+                foreach(string name in new[]{"__init__.py","core.py","runtime.py","fileio.py","party.py","party_memory.py","party_adapter.py"}){
                     string source=Path.Combine(bundle,"sdk_mods","bl4_lan",name);
                     if(!File.Exists(source))return InstallationState.PackageIncomplete;
                     expected.Add("sdk_mods/bl4_lan/"+name,Hash(File.ReadAllBytes(source)));
@@ -73,7 +73,7 @@ namespace BL4LAN {
                 Inside(root,e.FullName);
                 using(var s=e.Open())using(var m=new MemoryStream()){s.CopyTo(m);files.Add(e.FullName,m.ToArray());}
             }
-            foreach(string name in new[]{"__init__.py","core.py","runtime.py","fileio.py"}) {
+            foreach(string name in new[]{"__init__.py","core.py","runtime.py","fileio.py","party.py","party_memory.py","party_adapter.py"}) {
                 string src=Path.Combine(bundle,"sdk_mods","bl4_lan",name);
                 if(!File.Exists(src))throw new FileNotFoundException("Не хватает файлов мода. Распакуйте весь архив рядом с лаунчером.");
                 files.Add("sdk_mods/bl4_lan/"+name,File.ReadAllBytes(src));

@@ -14,7 +14,7 @@ using System.Windows.Forms;
 using System.Reflection;
 [assembly: AssemblyTitle("BL4 LAN by skykindness")]
 [assembly: AssemblyCompany("skykindness")]
-[assembly: AssemblyVersion("0.2.6.0")]
+[assembly: AssemblyVersion("0.2.7.0")]
 
 namespace BL4LAN {
     static class Program {
@@ -61,7 +61,7 @@ namespace BL4LAN {
             languageSelector=new ComboBox {Left=514,Top=73,Width=106,DropDownStyle=ComboBoxStyle.DropDownList,AccessibleName=T("Язык")};
             languageSelector.Items.AddRange(new object[]{"RU","EN"});languageSelector.SelectedIndex=0;Controls.Add(languageSelector);
             navSettings=AddButton(T("Настройки"),646,26,230,delegate{ShowPage(!pageSettings.Visible);});
-            AddLabel("0.2.6  ·  LAN / VPN",646,75,230,22,9,Color.Silver);
+            AddLabel("0.2.7  ·  LAN / VPN",646,75,230,22,9,Color.Silver);
             pagePlay=new Panel {Left=24,Top=120,Width=852,Height=562};Controls.Add(pagePlay);
             pageSettings=new Panel {Left=24,Top=120,Width=852,Height=562,Visible=false};Controls.Add(pageSettings);
             surface=pageSettings;
@@ -294,7 +294,7 @@ namespace BL4LAN {
             RefreshInstallation();if(installationState!=InstallationState.Ready)throw new InvalidOperationException(T("Сначала выполните первый шаг в программе: выберите папку, установите мод или распакуйте полный пакет."));
             string root=GameRoot();var existing=FindRunning();
             if(existing!=null){existing.Dispose();SetStatus(T("ИГРА УЖЕ ЗАПУЩЕНА"),T("Для входа используйте кнопку «Подключиться», для хоста — «Создать хост»."),yellow);return;}
-            foreach(string name in new[]{"__init__.py","core.py","runtime.py","fileio.py"}){
+            foreach(string name in new[]{"__init__.py","core.py","runtime.py","fileio.py","party.py","party_memory.py","party_adapter.py"}){
                 string dest=Installer.Inside(root,"sdk_mods/bl4_lan/"+name),src=Path.Combine(bundle,"sdk_mods","bl4_lan",name);
                 if(!File.Exists(dest)||!File.Exists(src)||Installer.Hash(File.ReadAllBytes(dest))!=Installer.Hash(File.ReadAllBytes(src)))throw new InvalidOperationException(T("Сначала нажмите «Установить / обновить», чтобы установить эту версию мода."));
             }
