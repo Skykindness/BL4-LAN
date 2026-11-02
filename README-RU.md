@@ -1,8 +1,8 @@
 # BL4 LAN · by skykindness
 
-**Русский** · [English](README-EN.md) · **[Скачать 0.2.7](https://github.com/Skykindness/BL4-LAN/releases/tag/v0.2.7)**
+**Русский** · [English](README-EN.md) · [简体中文](README-ZH.md) · **[Скачать 0.2.7](https://github.com/Skykindness/BL4-LAN/releases/tag/v0.2.7)**
 
-Кооператив Borderlands 4 на двух ПК через LAN/VPN. На обоих компьютерах нужны одинаковые сборки игры и версия мода. Язык лаунчера: **RU / EN** вверху окна.
+Кооператив Borderlands 4 на двух ПК через LAN/VPN. На обоих компьютерах нужны одинаковые сборки игры и версия мода. Язык лаунчера: **RU / EN / ZH** вверху окна.
 
 ## 1. Подготовьте сеть
 

@@ -1,8 +1,8 @@
 # BL4 LAN · by skykindness
 
-[Русский](README-RU.md) · **English** · **[Download 0.2.7](https://github.com/Skykindness/BL4-LAN/releases/tag/v0.2.7)**
+[Русский](README-RU.md) · **English** · [简体中文](README-ZH.md) · **[Download 0.2.7](https://github.com/Skykindness/BL4-LAN/releases/tag/v0.2.7)**
 
-Borderlands 4 co-op on two PCs over LAN/VPN. Both players need the same game build and mod version. Select **RU / EN** at the top of the launcher.
+Borderlands 4 co-op on two PCs over LAN/VPN. Both players need the same game build and mod version. Select **RU / EN / ZH** at the top of the launcher.
 
 ## 1. Set up your network
 
