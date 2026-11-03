@@ -4,6 +4,7 @@ import os
 import time
 import traceback
 import uuid
+from contextlib import nullcontext
 import unrealsdk
 from mods_base import ENGINE, MODS_DIR, ButtonOption, CoopSupport, Game, build_mod, get_pc, keybind
 from unrealsdk.commands import add_command, remove_command
@@ -11,9 +12,14 @@ from unrealsdk.hooks import Type, add_hook, remove_hook
 from .core import Session, parse_endpoint, player_world_readiness
 from .runtime import Tracker, startup_enabled
 from .party_adapter import PartyBridge
+from .party_audit import AuditBridge
+from .party_memory import ProcessMemory
+from .party_trace import OpTrace
+from .party_names import NameBridge
+from .party_settings import DifficultyBridge
 from .fileio import read_request, write_json
 
-__version__ = "0.2.7"
+__version__ = "0.2.9"
 DATA = MODS_DIR.parent / "BL4-LAN-Data"
 try:
     DATA.mkdir(exist_ok=True)
@@ -21,6 +27,8 @@ except OSError:
     pass  # Local evidence storage is optional; native controls must still load.
 INSTANCE = uuid.uuid4().hex
 PID = os.getpid()
+operation_trace = OpTrace(DATA, PID, INSTANCE)
+trace_state_pending = False
 FAILURE_HOOKS = ("/Script/Engine.GameInstance:HandleTravelError", "/Script/Engine.GameInstance:HandleNetworkError")
 POLL_HOOKS = ("/Script/Engine.CameraModifier:BlueprintModifyCamera", "/Script/GbxUIUMG.GbxUIUMGTickWidget:BP_TickWidget",
               "/Script/Engine.PlayerController:ClientRestart")
@@ -31,6 +39,10 @@ LIFECYCLE_HOOKS = tuple("/Script/Engine.PlayerController:" + name for name in (
 registered_lifecycle_hooks = set()
 tracker = Tracker()
 native_party_bridge = None
+native_party_audit = None
+native_party_names = None
+native_personal_settings = None
+PERSONAL_SETTING_HOOK = '/Script/OakGame.OakPlayerState:ServerSetPlayerProfileDifficulty'
 buddy_context = None
 buddy_next_scan = 0.0
 buddy_signature_valid = None
@@ -158,9 +170,34 @@ def sync_buddy_ui(observed, now=None):
     global native_party_bridge
     if native_party_bridge is None:
         native_party_bridge = PartyBridge(unrealsdk, get_pc,
-            lambda pc: session.gameplay.GetGameState(pc), diagnostic=buddy_diagnostic)
+            lambda pc: session.gameplay.GetGameState(pc), diagnostic=buddy_diagnostic, trace=operation_trace)
     native_party_bridge.sync(observed, enabled=mod.is_enabled, guest=tracker.role == "guest",
                              now=time.monotonic() if now is None else now)
+
+
+def sync_party_audit(observed, now):
+    """Three optional read-only snapshots; the existing recorder owns the ZIP."""
+    global native_party_audit
+    if native_party_audit is None:
+        def memory():
+            if native_party_bridge is not None and native_party_bridge.memory is not None:
+                return native_party_bridge.memory
+            return ProcessMemory()
+        native_party_audit = AuditBridge(unrealsdk, get_pc,
+            lambda pc: session.gameplay.GetGameState(pc), lambda: ENGINE.GameInstance,
+            memory_factory=memory, diagnostic=buddy_diagnostic, trace=operation_trace)
+    native_party_audit.sync(observed, enabled=mod.is_enabled, role=tracker.role, now=now)
+
+
+def sync_party_names(observed, now):
+    """Reconcile an existing empty native label once after its source is ready."""
+    global native_party_names
+    if native_party_audit is None:
+        return
+    if native_party_names is None or native_party_names.audit is not native_party_audit:
+        native_party_names = NameBridge(unrealsdk, native_party_audit,
+            diagnostic=buddy_diagnostic, trace=operation_trace)
+    native_party_names.sync(observed, enabled=mod.is_enabled, role=tracker.role, now=now)
 
 
 def native_details(pc, game_state, driver):
@@ -274,13 +311,37 @@ def inspect_state():
         pass
     return observed
 
+def get_personal_settings_bridge():
+    global native_personal_settings
+    if native_personal_settings is None:
+        native_personal_settings = DifficultyBridge(unrealsdk, get_pc,
+            lambda pc: session.gameplay.GetGameState(pc), lambda: ENGINE.GameInstance,
+            diagnostic=buddy_diagnostic)
+    return native_personal_settings
+
+
+def personal_setting_observed(obj, args, ret, func):
+    # Observe the player's own stock choice. Never suppress the native setter.
+    try:
+        if native_personal_settings is not None:
+            native_personal_settings.note_native_selection(obj)
+    except Exception:
+        pass
+
+
+def sync_personal_settings(observed, now):
+    bridge = get_personal_settings_bridge()
+    bridge.observe(observed, enabled=mod.is_enabled, now=now)
+    bridge.sync(observed, enabled=mod.is_enabled, role=tracker.role, attempt_id=attempt_id, now=now)
+
+
 def current_state():
     if not mod.is_enabled:
         return dict(tracker.current)
     return tracker.observe(inspect_state(), now=time.monotonic())
 
 def run(action, address=None, source="console"):
-    global attempt_id, action_source
+    global attempt_id, action_source, trace_state_pending
     try:
         if action == "status":
             report(current_state(), True)
@@ -324,11 +385,23 @@ def run(action, address=None, source="console"):
             raise ValueError(hint)
         attempt_id = uuid.uuid4().hex
         action_source = source
+        try:
+            bridge = get_personal_settings_bridge()
+            if action == 'join':
+                bridge.observe(current_state(), enabled=True, now=time.monotonic())
+                bridge.arm(attempt_id, now=time.monotonic())
+            else:
+                bridge.cancel()
+        except Exception as error:
+            buddy_error_once('difficulty_capture', error)
+        operation_trace.arm(attempt_id)
+        trace_state_pending = True
         report(tracker.start(action, address or "", now=time.monotonic()), True)
-        if action == "host":
-            session.host()
-        else:
-            session.join(address)
+        with operation_trace.operation('native_travel'):
+            if action == "host":
+                session.host()
+            else:
+                session.join(address)
         diagnostic("travel_dispatched", action=action, target=address or "current_map")
     except Exception as error:
         tracker.fail(str(error), "request")
@@ -389,6 +462,22 @@ def on_enable():
             session = Session(ENGINE, get_pc, unrealsdk.find_class("GameplayStatics").ClassDefaultObject,
                               unrealsdk.find_class("ShiftNetDriver").ClassDefaultObject, map_package)
         add_command("bl4lan", console)
+        try:
+            bridge = get_personal_settings_bridge()
+            bridge.start_verification()
+            fn = unrealsdk.find_object('Function', PERSONAL_SETTING_HOOK)
+            properties = list(fn._properties()) if fn is not None else []
+            if (len(properties) == 1 and str(properties[0].Name) == 'NewDifficulty'
+                    and type(properties[0]).__name__ == 'ZByteProperty'
+                    and int(fn.FunctionFlags) & 0x2000c0 == 0x2000c0):
+                add_hook(PERSONAL_SETTING_HOOK, Type.PRE, 'bl4_lan_personal_choice', personal_setting_observed)
+                bridge.set_selection_observer_ready(True)
+            else:
+                bridge.set_selection_observer_ready(False)
+        except Exception as error:
+            if native_personal_settings is not None:
+                native_personal_settings.set_selection_observer_ready(False)
+            buddy_error_once('difficulty_observer', error)
         for path in FAILURE_HOOKS:
             add_hook(path, Type.POST, "bl4_lan_failure", native_failure)
         for path in LIFECYCLE_HOOKS:
@@ -412,6 +501,13 @@ def on_disable():
     global buddy_context, buddy_next_scan, buddy_signature_valid
     if native_party_bridge is not None:
         native_party_bridge.deactivate()
+    if native_personal_settings is not None:
+        native_personal_settings.cancel()
+        native_personal_settings.set_selection_observer_ready(False)
+    try:
+        remove_hook(PERSONAL_SETTING_HOOK, Type.PRE, 'bl4_lan_personal_choice')
+    except Exception:
+        pass
     buddy_context = None
     buddy_next_scan = 0.0
     buddy_signature_valid = None
@@ -427,7 +523,7 @@ def on_disable():
     report(tracker.disable(), True)
 
 def poll(obj, args, ret, func):
-    global last_poll, request_id, busy
+    global last_poll, request_id, busy, trace_state_pending
     if not busy and getattr(func, "Name", "") == "ClientRestart":
         try:
             diagnostic("client_restart", observed=inspect_state())
@@ -444,11 +540,38 @@ def poll(obj, args, ret, func):
             request_id = request["id"]
             run(request["action"], request.get("address"), source="launcher")
         try:
-            observed = current_state()
+            if trace_state_pending:
+                trace_state_pending = False
+                with operation_trace.operation('native_state_observation'):
+                    observed = current_state()
+            else:
+                observed = current_state()
+            count = observed.get('player_count')
             try:
-                sync_buddy_ui(observed, now=now)
+                sync_personal_settings(observed, now=time.monotonic())
+            except Exception as error:
+                buddy_error_once('difficulty_sync', error)
+            native_party_present = (isinstance(count, int) and not isinstance(count, bool) and 2 <= count <= 4
+                and observed.get('pawn_present') is True and observed.get('passthrough') is True)
+            try:
+                first_bridge = (native_party_present and tracker.role == 'guest'
+                    and observed.get('server_connection_present') is True
+                    and (native_party_bridge is None or native_party_bridge.memory is None))
+                with operation_trace.operation('party_bridge_initialize') if first_bridge else nullcontext():
+                    sync_buddy_ui(observed, now=now)
             except Exception as error:
                 buddy_error_once("poll", error)
+            try:
+                first_audit = (native_party_present and observed.get('player_world_ready') is True
+                    and (native_party_audit is None or getattr(native_party_audit,'memory',None) is None))
+                with operation_trace.operation('party_audit_initialize') if first_audit else nullcontext():
+                    sync_party_audit(observed, now=now)
+            except Exception:
+                pass  # Evidence failures cannot hide status or change session control.
+            try:
+                sync_party_names(observed, now=now)
+            except Exception as error:
+                buddy_error_once('name_recovery', error)
             report(observed)
         except (AttributeError, ValueError, IndexError):
             report(dict(tracker.current))

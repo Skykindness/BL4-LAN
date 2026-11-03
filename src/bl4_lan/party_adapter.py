@@ -1,6 +1,7 @@
 """Guest-only bridge into native party registration and deferred UI consumers."""
 from .party import PartyCoordinator
 from .party_memory import ProcessMemory,require
+from contextlib import nullcontext
 
 def path(obj):
     value=obj._path_name()
@@ -15,9 +16,10 @@ def world_of(obj):
     raise ValueError('Unsupported world ownership chain')
 
 class PartyBridge:
-    def __init__(self,sdk,get_pc,get_game_state,memory_factory=ProcessMemory,diagnostic=lambda *a,**k:None):
+    def __init__(self,sdk,get_pc,get_game_state,memory_factory=ProcessMemory,diagnostic=lambda *a,**k:None,trace=None):
         self.sdk=sdk;self.get_pc=get_pc;self.get_game_state=get_game_state
         self.memory_factory=memory_factory;self.diagnostic=diagnostic
+        self.trace=trace
         self.memory=None;self.coordinator=PartyCoordinator()
         self._next_scan=0.;self._signature=None;self._reported=set();self._active=False
 
@@ -57,7 +59,8 @@ class PartyBridge:
             require(gs is not None,'Replicated world roster is unavailable')
             local_player=pc.Player;local_ps=pc.PlayerState;world=world_of(gs)
             cls=self.sdk.find_class('OakUIDataCollector_BuddyInfo')
-            collectors=[o for o in self.sdk.find_all(cls,False) if not str(o.Name).startswith('Default__') and o.Outer==local_player]
+            with self.trace.operation('buddy_collector_scan') if self.trace is not None and self.memory is None else nullcontext():
+                collectors=[o for o in self.sdk.find_all(cls,False) if not str(o.Name).startswith('Default__') and o.Outer==local_player]
             require(len(collectors)==1,'Owned native party collector is unavailable')
             collector=collectors[0]
             if self.memory is None:self.memory=self.memory_factory()
@@ -71,7 +74,9 @@ class PartyBridge:
             context=tuple(identity(obj) for obj in (world,pc,gs,local_ps))
             collector_key=identity(collector)
             if self._signature is None:
-                try:self._signatures()
+                try:
+                    with self.trace.operation('native_callback_signatures') if self.trace is not None else nullcontext():
+                        self._signatures()
                 except Exception:
                     self._signature=False;raise
                 self._signature=True
@@ -123,13 +128,17 @@ class PartyBridge:
 
             def register(member):
                 if member['key'] in sources()['registered']:return
-                member['player_state'].OnRep_UniqueId()
+                with self.trace.operation('player_state_registration') if self.trace is not None else nullcontext():
+                    validate()
+                    member['player_state'].OnRep_UniqueId()
                 self._log('native_party_registration_dispatched',context=context,player_id=member['player_id'])
 
             def enqueue(member):
                 current=sources()
                 if member['key'] in current['pending'] or member['key'] not in current['registered']:return
-                collector.OnPlayerConnected(member['player_state'])
+                with self.trace.operation('buddy_collector_enqueue') if self.trace is not None else nullcontext():
+                    validate()
+                    collector.OnPlayerConnected(member['player_state'])
                 self._log('native_party_queue_seeded',context=context,player_id=member['player_id'])
 
             result=self.coordinator.reconcile(context,collector_key,members,sources,register,enqueue,now)
