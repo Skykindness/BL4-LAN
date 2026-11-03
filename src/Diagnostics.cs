@@ -36,7 +36,9 @@ namespace BL4LAN {
         readonly List<string> triggers=new List<string>();
         string id,role,request,instance,nativeAttempt,lastAttemptKey;
         int pid; DateTime started,sessionStarted,processStarted,triggerAt,missingAt,unresponsiveAt,nextSave;
-        bool connected,recovered,worldAvailable,lastRunning;int lastPlayers;
+        double traceAttemptStarted;
+        bool connected,recovered,worldAvailable,lastRunning,partyCheckpointSaved,partyCheckpointPending;
+        DateTime nextPartySave;int lastPlayers;
         public string LastReport {get;private set;}
         public string LastError {get;private set;}
         public bool IsActive {get{return id!=null;}}
@@ -52,17 +54,21 @@ namespace BL4LAN {
             // Launch observation has no native attempt yet. The first real action
             // fills it in; it is not a retry and must not produce an empty ZIP.
             if(IsActive&&sameProcess&&nativeAttempt==null&&String.IsNullOrEmpty(request)&&triggers.Count==0&&!connected){
-                role=Role(action);request=requestId;return;
+                // Keep launch evidence/sessionStarted, but give this request its
+                // own deadline even if the player spent minutes in the menus.
+                role=Role(action);request=requestId;started=utc;traceAttemptStarted=(utc-Epoch).TotalSeconds;return;
             }
             if(IsActive){Finish(utc,"new_attempt");if(IsActive)return;}
             if(!sameProcess){
                 ring.Clear();ringBytes=0;nativeEvents.Clear();nativeKeys.Clear();nativeBytes=0;
                 transitions.Clear();transitionBytes=0;lastTransition=null;lastAttemptKey=null;
                 connected=worldAvailable=false;lastPlayers=0;sessionStarted=utc;
+                partyCheckpointSaved=false;nextPartySave=DateTime.MinValue;
             }
             id=Guid.NewGuid().ToString("N");role=Role(action);request=requestId;
-            pid=processId;processStarted=processStart;started=utc;instance=null;nativeAttempt=null;
+            pid=processId;processStarted=processStart;started=utc;traceAttemptStarted=(utc-Epoch).TotalSeconds;instance=null;nativeAttempt=null;
             triggers.Clear();triggerAt=missingAt=unresponsiveAt=nextSave=DateTime.MinValue;recovered=false;LastError=null;
+            partyCheckpointPending=false;
         }
         static string Role(string action){return action=="host"?"host":action=="join"||action=="guest"?"guest":"unknown";}
         public void BindInstance(string expected){if(IsActive&&instance==null&&!String.IsNullOrEmpty(expected))instance=expected.Length>128?expected.Substring(0,128):expected;}
@@ -87,11 +93,24 @@ namespace BL4LAN {
             if(IsActive&&f.Running&&(f.ProcessId!=pid||f.ProcessStartedUtc!=processStarted)){Finish(f.Utc,"process_replaced");}
             if(fresh&&!awaitingAck&&activePhase&&!String.IsNullOrEmpty(observedRole)){
                 if(IsActive&&nativeAttempt!=null&&key!=lastAttemptKey){Finish(f.Utc,"new_attempt");}
-                if(!IsActive&&(key!=lastAttemptKey||phase=="connected"))Arm(observedRole=="host"?"host":"join",Text(d,"request_id"),f.ProcessId,f.ProcessStartedUtc,f.Utc);
-                if(IsActive&&(nativeAttempt==null||key==lastAttemptKey)){instance=Text(d,"instance");nativeAttempt=attempt;lastAttemptKey=key;}
+                if(!IsActive&&(key!=lastAttemptKey||phase=="connected")){
+                    Arm(observedRole=="host"?"host":"join",Text(d,"request_id"),f.ProcessId,f.ProcessStartedUtc,f.Utc);
+                    // Native F6/F7 can publish status and enter a blocking call
+                    // before the observer discovers this new attempt. Keep its
+                    // validated native timestamp separate from our timer clock.
+                    if(IsActive&&nativeAttempt==null&&pid==f.ProcessId&&processStarted==f.ProcessStartedUtc)
+                        traceAttemptStarted=Number(d,"timestamp");
+                }
+                if(IsActive&&(nativeAttempt==null||key==lastAttemptKey)){
+                    if(nativeAttempt==null&&String.IsNullOrEmpty(request))traceAttemptStarted=Number(d,"timestamp");
+                    instance=Text(d,"instance");nativeAttempt=attempt;lastAttemptKey=key;
+                }
                 if(IsActive)role=Role(observedRole);
             }
-            if(!IsActive&&justExited&&lastAttemptKey!=null){string oldInstance=instance,oldAttempt=nativeAttempt;Arm(role,request,f.ProcessId,f.ProcessStartedUtc,f.Utc);instance=oldInstance;nativeAttempt=oldAttempt;}
+            if(!IsActive&&justExited&&lastAttemptKey!=null){
+                string oldInstance=instance,oldAttempt=nativeAttempt;double oldTraceStart=traceAttemptStarted;
+                Arm(role,request,f.ProcessId,f.ProcessStartedUtc,f.Utc);instance=oldInstance;nativeAttempt=oldAttempt;traceAttemptStarted=oldTraceStart;
+            }
             if(IsActive&&valid)BindInstance(Text(d,"instance"));
             if(valid&&f.ProcessId==pid&&f.ProcessStartedUtc==processStarted){
                 var transition=new Dictionary<string,object>{{"process_id",pid},{"instance",Text(d,"instance")},{"attempt_id",attempt},{"request_id",Text(d,"request_id")},{"role",observedRole},{"status",phase},{"player_count",Number(d,"player_count")}};
@@ -104,6 +123,11 @@ namespace BL4LAN {
             }
             if(f.Events!=null)foreach(var e in f.Events){
                 if(Number(e,"pid")!=pid||Text(e,"instance")!=instance||Number(e,"timestamp")<(processStarted-Epoch).TotalSeconds||Number(e,"timestamp")>(f.Utc-Epoch).TotalSeconds+5||Text(e,"event")=="state")continue;
+                object auditValue;var audit=e.TryGetValue("audit",out auditValue)?auditValue as IDictionary<string,object>:null;
+                if(!partyCheckpointSaved&&fresh&&!awaitingAck&&!String.IsNullOrEmpty(nativeAttempt)
+                    &&Text(e,"attempt_id")==nativeAttempt&&Text(e,"event")=="party_audit"
+                    &&Text(audit,"status")=="captured"&&Number(audit,"stage")==2&&Text(audit,"role")==role
+                    &&Regex.IsMatch(Text(audit,"context_tag"),"^[a-f0-9]{16}$"))partyCheckpointPending=true;
                 string line=json.Serialize(Clean(e));if(!nativeKeys.Add(line))continue;nativeEvents.Add(line);nativeBytes+=Encoding.UTF8.GetByteCount(line);
                 while(nativeEvents.Count>128||nativeBytes>512*1024){int index=nativeEvents.Count>32?32:0;string old=nativeEvents[index];nativeEvents.RemoveAt(index);nativeBytes-=Encoding.UTF8.GetByteCount(old);nativeKeys.Remove(old);}
             }
@@ -127,6 +151,11 @@ namespace BL4LAN {
             if(!fresh&&(f.Utc-started).TotalSeconds>=60&&(!valid||age>=60))Trigger("mod_updates_stalled",f.Utc);
             if(!f.Responding){if(unresponsiveAt==DateTime.MinValue)unresponsiveAt=f.Utc;if((f.Utc-unresponsiveAt).TotalSeconds>=60)Trigger("process_unresponsive",f.Utc);}else unresponsiveAt=DateTime.MinValue;
             if(triggerAt!=DateTime.MinValue&&(f.Utc-triggerAt).TotalSeconds>=60)Finish(f.Utc,"aftermath_complete");
+            if(IsActive&&f.Running&&fresh&&!awaitingAck&&triggerAt==DateTime.MinValue
+                &&partyCheckpointPending&&!partyCheckpointSaved&&f.Utc>=nextPartySave){
+                try{LastReport=Save(f.Utc,"party_audit_checkpoint");LastError=null;partyCheckpointSaved=true;partyCheckpointPending=false;}
+                catch(Exception e){LastError=e.GetType().Name+": "+Redact(e.Message);nextPartySave=f.Utc.AddSeconds(30);}
+            }
         }
         public void Finish(DateTime utc,string reason){
             if(!IsActive||utc<nextSave)return;
@@ -162,9 +191,72 @@ namespace BL4LAN {
                 using(var r=new StreamReader(stream,Encoding.UTF8,true)){string text=r.ReadToEnd();if(cut){int end=text.IndexOf('\n');text=end<0?"":text.Substring(end+1);}return text;}
             }
         }
+        static readonly HashSet<string> TraceOperations=new HashSet<string>(new[]{
+            "party_bridge_initialize","party_audit_initialize","party_bridge_sync","party_audit_sync",
+            "player_state_registration","buddy_collector_enqueue","overhead_name_refresh","native_name_probe",
+            "native_travel","native_state_observation","buddy_collector_scan","native_callback_signatures"},StringComparer.Ordinal);
+        static void TraceRequire(bool value){if(!value)throw new InvalidDataException("Invalid operation trace");}
+        static object TraceValue(IDictionary<string,object> row,string name){object value;TraceRequire(row!=null&&row.TryGetValue(name,out value));return row[name];}
+        static int TraceInteger(IDictionary<string,object> row,string name,int minimum,int maximum){
+            object value=TraceValue(row,name);TraceRequire(value is int||value is long);
+            long number=Convert.ToInt64(value,CultureInfo.InvariantCulture);TraceRequire(number>=minimum&&number<=maximum);return (int)number;
+        }
+        static double TraceNumber(IDictionary<string,object> row,string name,double minimum,double maximum){
+            object value=TraceValue(row,name);TraceRequire(value is int||value is long||value is decimal||value is double);
+            double number=Convert.ToDouble(value,CultureInfo.InvariantCulture);TraceRequire(!Double.IsNaN(number)&&!Double.IsInfinity(number)&&number>=minimum&&number<=maximum);return number;
+        }
+        static string TraceText(IDictionary<string,object> row,string name){object value=TraceValue(row,name);TraceRequire(value is string);return (string)value;}
+        void AddOperationTrace(Dictionary<string,string> entries,Dictionary<string,object> coverage,DateTime utc){
+            const string entry="native-operation.json";string path=Path.Combine(root,"BL4-LAN-Data","native-operation-"+pid+".json");
+            coverage[entry]="missing";
+            try{
+                FileAttributes attributes;
+                try{attributes=File.GetAttributes(path);}catch(FileNotFoundException){return;}catch(DirectoryNotFoundException){return;}
+                coverage[entry]="invalid_or_foreign";TraceRequire((attributes&(FileAttributes.ReparsePoint|FileAttributes.Directory))==0&&Plain(path));
+                string text;
+                using(var stream=new FileStream(path,FileMode.Open,FileAccess.Read,FileShare.ReadWrite|FileShare.Delete)){
+                    byte[] bytes=new byte[2049];int count=0,read;
+                    while(count<bytes.Length&&(read=stream.Read(bytes,count,bytes.Length-count))>0)count+=read;
+                    TraceRequire(count>0&&count<=2048);text=new UTF8Encoding(false,true).GetString(bytes,0,count);
+                }
+                var data=json.DeserializeObject(text) as Dictionary<string,object>;TraceRequire(data!=null);
+                TraceRequire(TraceInteger(data,"schema",1,1)==1&&TraceInteger(data,"pid",1,Int32.MaxValue)==pid);
+                TraceRequire(!String.IsNullOrEmpty(instance)&&!String.IsNullOrEmpty(nativeAttempt)
+                    &&TraceText(data,"instance")==instance&&TraceText(data,"attempt_id")==nativeAttempt);
+                double minimum=Math.Max(traceAttemptStarted,(processStarted-Epoch).TotalSeconds);
+                double stamp=TraceNumber(data,"timestamp",minimum,(utc-Epoch).TotalSeconds+5);
+                string operation=TraceText(data,"operation"),phase=TraceText(data,"phase");
+                TraceRequire(TraceOperations.Contains(operation)&&(phase=="started"||phase=="returned"||phase=="raised"));
+                int sequence=TraceInteger(data,"sequence",1,64),depth=TraceInteger(data,"depth",0,8);
+                var pending=TraceValue(data,"pending") as object[];TraceRequire(pending!=null&&pending.Length==depth);
+                var cleanPending=new List<Dictionary<string,object>>();int previous=0;
+                foreach(object item in pending){
+                    var row=item as Dictionary<string,object>;TraceRequire(row!=null);
+                    string name=TraceText(row,"operation");TraceRequire(TraceOperations.Contains(name));
+                    int current=TraceInteger(row,"sequence",1,64);TraceRequire(current>previous);previous=current;
+                    double began=TraceNumber(row,"started_at",minimum,stamp);
+                    cleanPending.Add(new Dictionary<string,object>{{"operation",name},{"sequence",current},{"started_at",began}});
+                }
+                TraceRequire(phase=="started"?depth>0:depth==0);
+                if(depth>0)TraceRequire(Convert.ToString(cleanPending[depth-1]["operation"])==operation&&(int)cleanPending[depth-1]["sequence"]==sequence);
+                var clean=new Dictionary<string,object>{{"schema",1},{"pid",pid},{"instance",instance},{"attempt_id",nativeAttempt},
+                    {"timestamp",stamp},{"phase",phase},{"operation",operation},{"sequence",sequence},{"depth",depth},{"pending",cleanPending.ToArray()}};
+                object completedValue;
+                if(data.TryGetValue("completed",out completedValue)){
+                    var completed=completedValue as Dictionary<string,object>;TraceRequire(completed!=null);
+                    string name=TraceText(completed,"operation"),outcome=TraceText(completed,"outcome");
+                    TraceRequire(TraceOperations.Contains(name)&&(outcome=="returned"||outcome=="raised"));
+                    if(depth==0)TraceRequire(name==operation&&outcome==phase);
+                    clean["completed"]=new Dictionary<string,object>{{"operation",name},{"outcome",outcome}};
+                }else TraceRequire(depth>0);
+                string result=json.Serialize(clean);TraceRequire(Encoding.UTF8.GetByteCount(result)<=2048);
+                entries[entry]=result;coverage[entry]="present";
+            }catch(Exception){coverage[entry]="invalid_or_foreign";}
+        }
         string Save(DateTime utc,string reason){
             string dir=Path.Combine(root,"BL4-LAN-Data","Reports");if(!Plain(dir))throw new IOException("Report directory is redirected");Directory.CreateDirectory(dir);
             var coverage=new Dictionary<string,object>();var entries=new Dictionary<string,string>();
+            AddOperationTrace(entries,coverage,utc);
             entries["timeline.jsonl"]=String.Join("\n",ring.Select(v=>json.Serialize(Clean(v))))+"\n";
             entries["transitions.jsonl"]=String.Join("\n",transitions)+"\n";
             var lines=new List<string>();foreach(string line in nativeEvents){var e=json.Deserialize<Dictionary<string,object>>(line);if(Number(e,"pid")==pid&&Number(e,"timestamp")>=(processStarted-Epoch).TotalSeconds)lines.Add(line);}
@@ -183,7 +275,7 @@ namespace BL4LAN {
                 try{if(File.Exists(path)&&File.GetLastWriteTimeUtc(path)>=started.AddMinutes(-2)){entries[item[0]]=String.Join("\n",Tail(path,128*1024).Split('\n').Select(Redact));coverage[item[0]]="bounded recent tail; may include other process output";}else coverage[item[0]]="missing_or_older_than_attempt";}catch(Exception e){coverage[item[0]]=e.GetType().Name;}
             }
             var versions=new Dictionary<string,object>();
-            foreach(string relative in new[]{"OakGame/Binaries/Win64/Borderlands4.exe","OakGame/Binaries/Win64/Plugins/unrealsdk.dll","OakGame/Binaries/Win64/Plugins/pyunrealsdk.dll","sdk_mods/keybinds/keybinds.pyd","sdk_mods/bl4_lan/__init__.py","sdk_mods/bl4_lan/core.py","sdk_mods/bl4_lan/runtime.py","sdk_mods/bl4_lan/fileio.py","sdk_mods/bl4_lan/party.py","sdk_mods/bl4_lan/party_memory.py","sdk_mods/bl4_lan/party_adapter.py"}){
+            foreach(string relative in new[]{"OakGame/Binaries/Win64/Borderlands4.exe","OakGame/Binaries/Win64/Plugins/unrealsdk.dll","OakGame/Binaries/Win64/Plugins/pyunrealsdk.dll","sdk_mods/keybinds/keybinds.pyd","sdk_mods/bl4_lan/__init__.py","sdk_mods/bl4_lan/core.py","sdk_mods/bl4_lan/runtime.py","sdk_mods/bl4_lan/fileio.py","sdk_mods/bl4_lan/party.py","sdk_mods/bl4_lan/party_memory.py","sdk_mods/bl4_lan/party_adapter.py","sdk_mods/bl4_lan/party_probe.py","sdk_mods/bl4_lan/party_audit.py","sdk_mods/bl4_lan/party_trace.py","sdk_mods/bl4_lan/party_names.py","sdk_mods/bl4_lan/party_settings.py"}){
                 string path=Path.Combine(root,relative.Replace('/',Path.DirectorySeparatorChar));
                 try{if(!File.Exists(path)||!Plain(path)){versions[relative]="missing_or_redirected";continue;}
                     using(var stream=new FileStream(path,FileMode.Open,FileAccess.Read,FileShare.ReadWrite|FileShare.Delete))using(var sha=SHA256.Create())versions[relative]=new{bytes=stream.Length,sha256=BitConverter.ToString(sha.ComputeHash(stream)).Replace("-","").ToLowerInvariant(),version=FileVersionInfo.GetVersionInfo(path).FileVersion};
@@ -193,7 +285,7 @@ namespace BL4LAN {
             try{entries["network.json"]=json.Serialize(Clean(NetworkInterface.GetAllNetworkInterfaces().Where(n=>n.OperationalStatus==OperationalStatus.Up).Take(16).Select(n=>new Dictionary<string,object>{{"type",n.NetworkInterfaceType.ToString()},{"vpn_family",Regex.Match(n.Name+" "+n.Description,"Radmin|Tailscale|ZeroTier|Hamachi",RegexOptions.IgnoreCase).Value},{"ipv4",n.GetIPProperties().UnicastAddresses.Where(a=>a.Address.AddressFamily==AddressFamily.InterNetwork).Take(16).Select(a=>a.Address.ToString()).ToArray()}}).ToArray()));coverage["network"]="active adapter types and pseudonymized IPv4; no packet capture";}catch(Exception e){coverage["network"]=e.GetType().Name;}
             entries["crashes.json"]=json.Serialize(CrashMetadata(utc,coverage));
             entries["README.txt"]="BL4 LAN automatic local report / Автоматический локальный отчёт\r\nSend the ZIP from BOTH players to the person diagnosing the issue. / Передайте отчёты с обоих ПК.\r\nNo video, saves, memory dumps or upload. / Без видео, сохранений, дампов памяти и отправки.\r\nStale updates, peer departure and process exit are observations, not proof of a crash or a network cause. Native errors appear only if the game exposed them.\r\nИсчезновение обновлений, выход друга и закрытие процесса сами по себе не устанавливают причину сбоя.\r\nIP addresses are consistently pseudonymized; local paths and common credential fields are redacted. Review before sharing. / Адреса заменены метками, локальные пути и типовые поля секретов скрыты. Перед отправкой можно просмотреть отчёт.\r\n";
-            entries["report.json"]=json.Serialize(Clean(new Dictionary<string,object>{{"schema",1},{"launcher_version","0.2.7"},{"report_id",id},{"role",role},{"request_id",request},{"instance",instance},{"native_attempt_id",nativeAttempt},{"process_id",pid},{"process_started_utc",processStarted.ToString("o")},{"started_utc",sessionStarted.ToString("o")},{"attempt_started_utc",started.ToString("o")},{"ended_utc",utc.ToString("o")},{"end_reason",reason},{"observations",triggers.ToArray()},{"recovered",recovered},{"connection_observed",connected},{"ever_connected",connected},{"cause","unknown_unless_native_evidence_explains_it"},{"coverage",coverage},{"limits",new{ring_seconds=120,max_samples=240,max_raw_archive_bytes=4*1024*1024,aftermath_seconds=60}}}));
+            entries["report.json"]=json.Serialize(Clean(new Dictionary<string,object>{{"schema",1},{"launcher_version","0.2.9"},{"report_id",id},{"role",role},{"request_id",request},{"instance",instance},{"native_attempt_id",nativeAttempt},{"process_id",pid},{"process_started_utc",processStarted.ToString("o")},{"started_utc",sessionStarted.ToString("o")},{"attempt_started_utc",started.ToString("o")},{"ended_utc",utc.ToString("o")},{"end_reason",reason},{"observations",triggers.ToArray()},{"recovered",recovered},{"connection_observed",connected},{"ever_connected",connected},{"cause","unknown_unless_native_evidence_explains_it"},{"coverage",coverage},{"limits",new{ring_seconds=120,max_samples=240,max_raw_archive_bytes=4*1024*1024,aftermath_seconds=60}}}));
             long total=entries.Values.Sum(s=>(long)Encoding.UTF8.GetByteCount(s));if(total>4*1024*1024)throw new IOException("Report content limit exceeded");
             string file=Path.Combine(dir,"BL4-LAN-report-"+utc.ToString("yyyyMMdd-HHmmss")+"-"+role+"-"+id.Substring(0,8)+".zip"),temp=file+".tmp";
             try{using(var archive=ZipFile.Open(temp,ZipArchiveMode.Create))foreach(var entry in entries){using(var w=new StreamWriter(archive.CreateEntry(entry.Key,CompressionLevel.Optimal).Open(),new UTF8Encoding(false)))w.Write(entry.Value);}File.Move(temp,file);}
