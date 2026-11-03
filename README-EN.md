@@ -1,6 +1,6 @@
 # BL4 LAN · by skykindness
 
-**0.2.9** · [Русский](README-RU.md)
+**0.2.9** · [Русский](README-RU.md) · [简体中文](README-ZH.md)
 
 LAN / VPN co-op. Adds automatic recovery of an empty teammate nameplate; a local two-client test displayed the host name above the character on the guest. The owner confirmed map markers, teleport and live HP/shields on two PCs in 0.2.7.
 
@@ -28,4 +28,4 @@ Join hangs, party avatars and counts remain under investigation. Through-wall na
 
 For local tests, do not add `-NoMovies`: an owned comparison reproduced a lingering CutsceneIntro input lock with that flag. The updated two-client helper omits it. Version 0.2.9 was checked on two clients on one PC; this does not establish a fault-free full campaign.
 
-Select **RU / EN** in the launcher. [Donate](https://www.donationalerts.com/r/skykindness).
+Select **RU / EN / ZH** in the launcher. [Donate](https://www.donationalerts.com/r/skykindness).
