@@ -1,4 +1,12 @@
 * text=auto eol=lf
-*.py -text
+
+
+
 *.png binary
+
+
+
 *.ico binary
+
+
+
