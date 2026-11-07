@@ -9,7 +9,7 @@ foreach($relative in $manifest.Keys){
     if((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant() -ne $manifest[$relative]){throw "Source mismatch: $relative"}
 }
 $mod=@('__init__.py','core.py','runtime.py','fileio.py','party.py','party_memory.py','party_adapter.py','party_probe.py','party_audit.py','party_trace.py','party_names.py','party_settings.py')
-$docs=@('README-RU.md','README-EN.md','CHANGELOG-RU.md','LICENSE.txt','SOURCES.md')
+$docs=@('README-RU.md','README-EN.md','README-ZH-CN.md','CHANGELOG-RU.md','LICENSE.txt','SOURCES.md')
 $out=Join-Path $root 'dist-release'
 if(Test-Path -LiteralPath $out){throw 'dist-release already exists; use a fresh source folder'}
 New-Item -ItemType Directory -Path $out | Out-Null
@@ -26,9 +26,6 @@ Copy-Item -LiteralPath (Join-Path $root 'dist/BL4-LAN.exe') -Destination $bundle
 Copy-Item -LiteralPath $SDKArchive -Destination (Join-Path $bundle 'oak2-sdk-v0.3.zip')
 foreach($name in $mod){Copy-Item -LiteralPath (Join-Path $root "src/bl4_lan/$name") -Destination $payload}
 foreach($name in $docs){Copy-Item -LiteralPath (Join-Path $root $name) -Destination $bundle}
-$toolDir=Join-Path $bundle 'Tools'
-New-Item -ItemType Directory -Path $toolDir | Out-Null
-foreach($name in @('Start-Two-Clients.ps1','Two-Clients-RU.md')){Copy-Item -LiteralPath (Join-Path $root "Tools/$name") -Destination $toolDir}
 $sumLines=Get-ChildItem -LiteralPath $bundle -Recurse -File | Sort-Object FullName | ForEach-Object {
     $rel=[IO.Path]::GetRelativePath($bundle,$_.FullName).Replace('\','/')
     (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()+'  '+$rel

@@ -14,7 +14,7 @@ using System.Windows.Forms;
 using System.Reflection;
 [assembly: AssemblyTitle("BL4 LAN by skykindness")]
 [assembly: AssemblyCompany("skykindness")]
-[assembly: AssemblyVersion("0.2.9.0")]
+[assembly: AssemblyVersion("0.2.12.0")]
 
 namespace BL4LAN {
     static class Program {
@@ -59,9 +59,9 @@ namespace BL4LAN {
             donateButton.Click+=delegate{Guard(delegate{Process.Start(DonationLink());});};Controls.Add(donateButton);
             AddLabel(T("Язык"),416,77,90,24,9,Color.Silver);
             languageSelector=new ComboBox {Left=514,Top=73,Width=106,DropDownStyle=ComboBoxStyle.DropDownList,AccessibleName=T("Язык")};
-            languageSelector.Items.AddRange(new object[]{"RU","EN"});languageSelector.SelectedIndex=0;Controls.Add(languageSelector);
+            languageSelector.Items.AddRange(new object[]{"RU","EN","简体中文"});languageSelector.SelectedIndex=0;Controls.Add(languageSelector);
             navSettings=AddButton(T("Настройки"),646,26,230,delegate{ShowPage(!pageSettings.Visible);});
-            AddLabel("0.2.9  ·  CANDIDATE",646,75,230,22,9,Color.Silver);
+            AddLabel("0.2.12  ·  LAN / VPN",646,75,230,22,9,Color.Silver);
             pagePlay=new Panel {Left=24,Top=120,Width=852,Height=562};Controls.Add(pagePlay);
             pageSettings=new Panel {Left=24,Top=120,Width=852,Height=562,Visible=false};Controls.Add(pageSettings);
             surface=pageSettings;
@@ -143,7 +143,7 @@ namespace BL4LAN {
             var copy=new LinkLabel {Left=642,Top=703,Width=234,Height=24,Text=T("Скопировать сведения"),LinkColor=yellow,ActiveLinkColor=Color.White};
             copy.LinkClicked+=delegate{Guard(delegate{using(var p=FindRunning()){var d=ReadRuntime(p,true);Clipboard.SetText(json.Serialize(d));SetStatus(T("СВЕДЕНИЯ СКОПИРОВАНЫ"),T("Их можно приложить к сообщению о проблеме."),yellow);}});};Controls.Add(copy);
             LoadPreferences();LoadGame();UpdateMode();ShowPage(false);
-            languageSelector.SelectedIndexChanged+=delegate{if(loadingPreferences)return;language=languageSelector.SelectedIndex==1?"en":"ru";ApplyLanguage(this);if(notice!=null)ApplyLanguage(notice);if(tray!=null)foreach(ToolStripItem item in tray.ContextMenuStrip.Items)item.Text=T(item.Text);UpdateDiagnostics();Guard(SaveLanguagePreferences);};
+            languageSelector.SelectedIndexChanged+=delegate{if(loadingPreferences)return;language=languageSelector.SelectedIndex==2?"zh-CN":languageSelector.SelectedIndex==1?"en":"ru";ApplyLanguage(this);if(notice!=null)ApplyLanguage(notice);if(tray!=null)foreach(ToolStripItem item in tray.ContextMenuStrip.Items)item.Text=T(item.Text);UpdateDiagnostics();Guard(SaveLanguagePreferences);};
             folder.Leave+=delegate{LoadGame();};
             timer=new Timer {Interval=700};timer.Tick+=delegate{UpdateStatus();};timer.Start();
             var trayMenu=new ContextMenuStrip();trayMenu.Items.Add(T("Открыть BL4 LAN"),null,delegate{RestoreFromTray();});trayMenu.Items.Add(T("Выйти из лаунчера"),null,delegate{Close();});
@@ -264,14 +264,14 @@ namespace BL4LAN {
         void LoadPreferences(){
             loadingPreferences=true;language="ru";
             try {var d=json.Deserialize<Dictionary<string,object>>(File.ReadAllText(Path.Combine(bundle,"launcher-settings.json"),Encoding.UTF8));
-                if(d.ContainsKey("language")&&Convert.ToString(d["language"])=="en")language="en";
+                if(d.ContainsKey("language")){string saved=Convert.ToString(d["language"]);if(saved=="en"||saved=="zh-CN")language=saved;}
                 if(d.ContainsKey("folder"))folder.Text=Convert.ToString(d["folder"]);
                 if(d.ContainsKey("address"))address.Text=Convert.ToString(d["address"]);
                 if(d.ContainsKey("guest"))guest.Checked=Convert.ToBoolean(d["guest"]);
                 profileChoices.Clear();
                 if(d.ContainsKey("profileChoices"))foreach(var item in (Dictionary<string,object>)d["profileChoices"])profileChoices[Path.GetFullPath(item.Key).TrimEnd(Path.DirectorySeparatorChar)]=Convert.ToBoolean(item.Value);
                 if(d.ContainsKey("privateProfile")&&!String.IsNullOrWhiteSpace(folder.Text))profileChoices[Path.GetFullPath(folder.Text).TrimEnd(Path.DirectorySeparatorChar)]=Convert.ToBoolean(d["privateProfile"]);
-            }catch{}finally{languageSelector.SelectedIndex=language=="en"?1:0;ApplyLanguage(this);loadingPreferences=false;}
+            }catch{}finally{languageSelector.SelectedIndex=language=="zh-CN"?2:language=="en"?1:0;ApplyLanguage(this);loadingPreferences=false;}
         }
         void SavePreferences(){
             string root=GameRoot();if(!profileChoices.ContainsKey(root))profileChoices[root]=legacyProfile;

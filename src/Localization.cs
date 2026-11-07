@@ -16,16 +16,28 @@ namespace BL4LAN {
             }
             return result;
         }
+        static readonly Dictionary<string,string> chinese=BuildChinese();
+        static Dictionary<string,string> BuildChinese(){
+            var result=new Dictionary<string,string>(StringComparer.Ordinal);
+            foreach(string row in ChineseText.Split(new[]{'\r','\n'},StringSplitOptions.RemoveEmptyEntries)){
+                int split=row.IndexOf('|');if(split<0)continue;
+                result[row.Substring(0,split).Replace("\\n","\n")]=row.Substring(split+1).Replace("\\n","\n");
+            }
+            return result;
+        }
+        static string Chinese(string english){string value;return chinese.TryGetValue(english,out value)?value:english;}
         public static string Translate(string value,string language){
             if(String.IsNullOrEmpty(value))return value;
-            bool english=language=="en";
-            var duration=System.Text.RegularExpressions.Regex.Match(value,@"^(.*?)(  [0-9]+(?:[.,][0-9]+)? )(?:с\.|s\.)$");
-            if(duration.Success)return Translate(duration.Groups[1].Value,language)+duration.Groups[2].Value+(english?"s.":"с.");
+            bool english=language=="en",zh=language=="zh-CN";
+            var duration=System.Text.RegularExpressions.Regex.Match(value,@"^(.*?)(  [0-9]+(?:[.,][0-9]+)? )(?:с\.|s\.|秒)$");
+            if(duration.Success)return Translate(duration.Groups[1].Value,language)+duration.Groups[2].Value+(zh?"秒":english?"s.":"с.");
             const string prefix="BL4 LAN  /  ";if(value.StartsWith(prefix,StringComparison.Ordinal))return prefix+Translate(value.Substring(prefix.Length),language);
-            // Exact entries avoid replacing short button names inside complete instructions.
-            foreach(var pair in translations)if(value==pair.Key||value==pair.Value)return english?pair.Value:pair.Key;
-            // Runtime messages contain addresses, player counts and raw error details.
-            foreach(var pair in fragments)value=value.Replace(english?pair.Key:pair.Value,english?pair.Value:pair.Key);
+            foreach(var pair in translations){
+                string cn=Chinese(pair.Value);
+                if(value==pair.Key||value==pair.Value||value==cn)return zh?cn:english?pair.Value:pair.Key;
+            }
+            foreach(var pair in fragments){value=value.Replace(pair.Value,pair.Key);value=value.Replace(Chinese(pair.Value),pair.Key);}
+            foreach(var pair in fragments)value=value.Replace(pair.Key,zh?Chinese(pair.Value):english?pair.Value:pair.Key);
             return value;
         }
         static readonly KeyValuePair<string,string>[] fragments={
@@ -39,6 +51,189 @@ namespace BL4LAN {
             new KeyValuePair<string,string>("\nОн сохранён. Обновление не установлено поверх чужих изменений.","\nThe file was kept. The update did not overwrite external changes."),
             new KeyValuePair<string,string>("Обновление прервано; часть файлов заблокирована. Закройте игру и повторите установку. Резервная копия: ","Update interrupted; some files are locked. Close the game and install again. Backup: ")
         };
+        const string ChineseText=@"Play|开始游戏
+Settings|设置
+Back|返回
+LOAD YOUR CHARACTER FIRST|请先加载角色
+Choose Continue in the game and load your character into your own world. Then host or connect to your friend.|请先在游戏中选择“继续”，进入自己的游戏世界，再创建主机或连接好友。
+Your character is still loading. Wait for the game world and HUD, then try again.|角色仍在加载。请等待世界和界面加载完成后重试。
+Choose Continue in the game and load your character first.\nThen connect to the host's address. Keep the launcher open.|请先在游戏中选择“继续”并加载角色。\n然后连接主机地址，并保持启动器运行。
+Choose Continue, load your character, then click Connect.|选择“继续”，加载角色后点击“连接”。
+Automatic diagnostics are already running in another launcher window.|另一个启动器窗口已在运行自动诊断。
+Language|语言
+Donate|捐赠
+Automatic diagnostics ready — keep the launcher open or minimize to tray.|自动诊断已就绪，请保持启动器运行或最小化到托盘。
+Recording the session. A report will be saved automatically after a problem.|正在记录会话。发生问题后将自动保存报告。
+Session report saved — open the folder containing the ZIP to share.|会话报告已保存，点击打开 ZIP 文件所在文件夹。
+Report not saved yet. Check free space and access to the game folder.|报告尚未保存。请检查磁盘空间及游戏文件夹访问权限。
+Automatic diagnostics unavailable — check the selected game folder.|自动诊断不可用，请检查所选游戏文件夹。
+REPORT READY|报告已就绪
+Session report saved. The link to the ZIP folder is at the bottom of the launcher.|会话报告已保存，启动器底部有 ZIP 文件夹链接。
+Open BL4 LAN|打开 BL4 LAN
+Exit launcher|退出启动器
+Game settings|游戏设置
+Usually you only need to select the folder once. A new nickname applies after restarting the game.|通常只需选择一次文件夹。新昵称将在重启游戏后生效。
+Borderlands 4 folder|《无主之地4》文件夹
+Browse…|浏览…
+Select the Borderlands 4 folder containing OakGame|请选择包含 OakGame 的《无主之地4》文件夹
+Player nickname|玩家昵称
+Save nickname|保存昵称
+NICKNAME SAVED|昵称已保存
+Your new name will appear the next time you start the game.|新昵称将在下次启动游戏时显示。
+The previous value is kept\nin a backup.|原设置已保留\n在备份中。
+Your characters|你的角色
+Your regular game characters are used.|使用游戏中的现有角色。
+Close the game before changing your nickname or updating.\nThe previous settings are kept in a backup.|修改昵称或更新前请关闭游戏。\n原设置会保留在备份中。
+Done — back to play|完成，返回游戏
+HOST A GAME\nMy friend will connect to me|创建主机\n让好友连接我
+JOIN A GAME\nI have my friend's address|加入游戏\n我有好友的地址
+My address — send it to your friend|我的地址，请发送给好友
+Copy address|复制地址
+ADDRESS COPIED|地址已复制
+Send the address to your friend. Both computers must share a LAN or VPN.|将地址发送给好友。两台电脑必须处于同一局域网或 VPN 网络。
+ADDRESS NOT FOUND|未找到地址
+Connect to a LAN or VPN and reopen the launcher.|请连接局域网或 VPN 后重新打开启动器。
+Friend's address|好友的地址
+Example: 26.1.2.3:7777|例如：26.1.2.3:7777
+1  INSTALL THE MOD|1  安装模组
+Once, or after an update|首次使用或更新后安装一次
+Install mod|安装模组
+2  START THE GAME|2  启动游戏
+Load your character into the world|将角色加载到游戏世界
+Start game|启动游戏
+3  PLAY TOGETHER|3  一起游戏
+Open your game to your friend|向好友开放你的游戏
+Create host|创建主机
+BEFORE YOUR FIRST GAME|首次启动前
+Choose your role and follow the steps from left to right.|选择主机或加入，并从左到右按步骤操作。
+Shared LAN / VPN  ·  7777 UDP|同一局域网 / VPN  ·  UDP 7777
+Open log|打开日志
+The log will appear after the mod starts.|模组启动后才会生成日志。
+Copy diagnostics|复制诊断信息
+DIAGNOSTICS COPIED|诊断信息已复制
+You can attach them to a problem report.|可将其附在问题反馈中。
+MOD INSTALLED|模组已安装
+1  UPDATE THE MOD|1  更新模组
+1  SELECT THE GAME FOLDER|1  选择游戏文件夹
+1  EXTRACT THE FULL ARCHIVE|1  解压完整压缩包
+1  CHECK THE INSTALLATION|1  检查安装
+The mod is installed. You can start the game.|模组已安装，可以启动游戏。
+Only once before your first game|首次使用前安装一次即可
+The version differs or files are missing|版本不一致或缺少文件
+Select the folder in Settings|请在设置中选择文件夹
+Files are missing next to the launcher|启动器旁缺少必要文件
+Could not read the game files|无法读取游戏文件
+Select folder|选择文件夹
+Install / update|安装 / 更新
+Check again|重新检查
+1  START THE GAME|1  启动游戏
+2  PLAY TOGETHER|2  一起游戏
+READY TO START|已准备好启动
+The mod is installed. Choose your role, start the game and connect.|模组已安装。选择主机或加入，然后启动游戏并连接。
+Complete the first step above. You do not need to reinstall before every game.|完成上方第一步即可，无需每次游戏前重新安装。
+Connect|连接
+Wait for the main menu|请等待主菜单
+Join using the address above|使用上方地址加入
+Creating a host reloads the area. Wait for autosave first.\nKeep the launcher open after hosting to see your friend's status here.|创建主机会重新加载区域，请先等待自动保存。\n创建后请保持启动器运行，以查看好友状态。
+The host must open their game first. Use an address from the same LAN or VPN.\nKeep the launcher open to see the connection status or an error here.|主机必须先开放游戏。请使用同一局域网或 VPN 的地址。\n保持启动器运行，以查看连接状态或错误原因。
+FAILED|失败
+Failed|操作失败
+Select the game folder containing OakGame.|请选择包含 OakGame 的游戏文件夹。
+Your previously selected character set was preserved during the update.\nSaves are neither moved nor merged.|更新保留了之前选择的角色配置。\n不会移动或合并存档。
+INSTALLING|正在安装
+Checking and installing files…|正在检查并安装文件…
+DONE|完成
+Enter the host's address, for example 26.1.2.3:7777.|请输入主机地址，例如 26.1.2.3:7777。
+Invalid host address or port.|主机地址或端口无效。
+An IPv4 address for your friend's computer is required.|需要好友电脑的 IPv4 地址。
+Complete the first step: select the game folder, install the mod or extract the full package.|请先完成第一步：选择游戏文件夹、安装模组或解压完整压缩包。
+GAME ALREADY RUNNING|游戏已在运行
+To join, use Connect; to host, use Create host.|加入请使用“连接”，开房请使用“创建主机”。
+Click Install / update first to install this mod version.|请先点击“安装 / 更新”以安装此版本模组。
+Install the SDK and mod first.|请先安装 SDK 和模组。
+GAME STARTING|游戏正在启动
+Load your character into the world, then click Create host.|将角色加载到世界后，点击“创建主机”。
+Wait for the main menu, then click Connect.|请等待主菜单后点击“连接”。
+Multiple game instances are running. Keep one open to control it from the launcher.|检测到多个游戏实例。使用启动器控制时请只保留一个。
+Start the game first.|请先启动游戏。
+The mod has not loaded yet. Wait for the main menu. If no message appears, install the update and restart the game.|模组尚未加载，请等待主菜单。若仍无消息，请安装更新并重启游戏。
+The game is using an older mod version. Close it, install the update and start it again.|游戏正在使用旧版模组。请关闭游戏、安装更新后重新启动。
+No recent response from the game. Wait until loading finishes and try again.|尚未收到游戏的新响应。请等待加载结束后重试。
+REQUEST SENT|请求已发送
+Creating the host. Wait for the area to reload.|正在创建主机，请等待区域重新加载。
+Waiting for confirmation from the game…|正在等待游戏确认…
+GAME CLOSED|游戏已关闭
+You can change your nickname, install an update or start the game.|现在可以修改昵称、安装更新或启动游戏。
+GAME HAS NOT CONFIRMED THE REQUEST|游戏尚未确认请求
+Wait for the main menu or game world, then try again. Backup keys: F6 to host, F7 to join.|等待主菜单或游戏世界加载后重试。备用按键：F6 创建主机，F7 加入。
+WAITING FOR THE GAME|正在等待游戏
+No recent mod data. The game may be loading an area. The connection status is currently unconfirmed.|尚无模组的新数据，游戏可能正在加载区域。目前无法确认连接状态。
+CONNECTED|已连接
+HOST READY|主机已就绪
+CONNECTING|正在连接
+CREATING HOST|正在创建主机
+LOADING AREA|正在加载区域
+MOD DISABLED|模组已禁用
+CONNECTION ERROR|连接错误
+MOD READY|模组已就绪
+ s.| 秒
+STATUS UNAVAILABLE|状态不可用
+Could not read a recent game response. The current connection is unconfirmed. Wait for loading to finish or open the log.|无法读取游戏的新响应，目前无法确认连接。请等待加载完成或打开日志。
+Invalid package path.|压缩包路径无效。
+The path is outside the game folder.|路径超出了游戏文件夹。
+Invalid installation journal entry.|安装记录条目无效。
+The journal path is outside the game folder.|安装记录路径超出了游戏文件夹。
+The installation journal is damaged; it was kept unchanged.|安装记录已损坏，原文件已保留。
+The installation journal is damaged.|安装记录已损坏。
+The installation journal contains conflicting entries.|安装记录中存在冲突条目。
+The file checksum differs from the installation journal.|文件校验值与安装记录不一致。
+The file does not match the previous installation journal.|文件与上次安装记录不一致。
+The installation folder contains a link. Select a regular game folder.|安装文件夹包含链接。请选择普通游戏文件夹。
+Close Borderlands 4 before updating or changing your nickname. The game will not be closed automatically.|更新或修改昵称前请关闭《无主之地4》。程序不会自动关闭游戏。
+Could not check the running game. Close it before updating.|无法检查正在运行的游戏。请在更新前关闭游戏。
+Select the Borderlands 4 root folder containing OakGame.|请选择包含 OakGame 的《无主之地4》根目录。
+The SDK archive is missing or damaged. Extract the full BL4 LAN package again.|SDK 压缩包缺失或已损坏。请重新解压完整的 BL4 LAN 压缩包。
+Invalid SDK file size.|SDK 文件大小无效。
+Mod files are missing. Extract the full archive next to the launcher.|缺少模组文件。请将完整压缩包解压到启动器旁。
+BL4 LAN updated. The previous version was saved in a backup.|BL4 LAN 已更新，旧版本已备份。
+BL4 LAN installed and enabled. You can start the game.|BL4 LAN 已安装并启用，可以启动游戏。
+The nickname settings file was not found. Changing the name requires a repack with steam_emu.ini.|未找到昵称设置文件。修改昵称需要安装包含 steam_emu.ini 的版本。
+Could not identify a unique player name. The original setting was kept.|无法确定唯一的玩家昵称，原设置已保留。
+Nickname: 1 to 32 letters, digits, spaces or the symbols _ . -|昵称长度为 1–32 个字符，可使用字母、数字、空格及 _ . -
+Enter the host's IPv4 address.|请输入主机的 IPv4 地址。
+Use an address such as 192.168.1.5 or 192.168.1.5:7777.|地址格式示例：192.168.1.5 或 192.168.1.5:7777。
+Enter one computer address and a port from 1024 to 65535.|请输入一个电脑地址，端口范围为 1024–65535。
+Load your character into the game world first, then press F6.|请先将角色加载到游戏世界，再按 F6。
+You can create a host after loading a game area.|进入游戏区域后才能创建主机。
+Wait for the main menu and press F7 again.|请等待主菜单后再次按 F7。
+BL4 LAN activation settings are damaged. Reinstall the mod using the launcher.|BL4 LAN 启用设置已损坏，请使用启动器重新安装模组。
+Could not identify the current area. Load your character into the world.|无法确定当前区域，请将角色加载到游戏世界。
+The host did not respond in time. Check the address, LAN/VPN and host readiness, then try connecting again.|主机响应超时。请检查地址、局域网/VPN及主机状态后重试。
+The connection to your friend was lost. You can try connecting again.|与好友的连接已断开，可以重新连接。
+Could not create a host. Close any other running game instance and try again.|无法创建主机。请关闭其他游戏实例后重试。
+The game rejected the connection or area loading. Check that both game builds match and the host is ready.|游戏拒绝了连接或区域加载。请检查双方游戏版本是否一致，以及主机是否就绪。
+BL4 LAN is enabled. Host or join using the launcher.|BL4 LAN 已启用，请通过启动器创建主机或加入游戏。
+Could not enable the game's network. Check the message in the launcher.|无法启用游戏网络，请查看启动器中的消息。
+Your friend's address is missing. Select Join in the launcher and enter their LAN/VPN address. If you are hosting, use Create host or F6.|未填写好友地址。请在启动器中选择“加入”并输入其局域网/VPN地址。主机玩家请使用“创建主机”或 F6。
+Too many arguments. Enter one address as IPv4[:port].|参数过多，请输入一个 IPv4[:端口] 地址。
+The mod is ready. Host or join using the launcher.|模组已就绪，请通过启动器创建主机或加入。
+The mod is disabled. Hosting or joining will enable it.|模组已禁用，创建主机或加入时会启用。
+Host created. Waiting for your friend.|主机已创建，正在等待好友。
+Your friend disconnected. The host is waiting for a connection.|好友已断开，主机正在等待连接。
+The host is temporarily unavailable. Waiting for the game world to load.|主机暂时不可用，正在等待游戏世界加载。
+The host is no longer active. Load your character into the world and create a host again.|主机已停止运行。请加载角色后重新创建主机。
+Waiting for the area and character to load. Checking the connection status…|正在等待区域和角色加载，并检查连接状态…
+The connection to the host is currently unconfirmed. You can try joining again.|目前无法确认与主机的连接，可以重新尝试加入。
+The game did not confirm the connection within 45 seconds. Check the address, shared LAN/VPN and host readiness, then try joining again.|游戏在 45 秒内未确认连接。请检查地址、共同局域网/VPN及主机状态后重试。
+Connecting to |正在连接到 
+. Waiting for the host…|。正在等待主机响应…
+Your friend connected|好友已连接
+Connected to the host|已连接到主机
+. Players: |。玩家人数：
+Could not load BL4 LAN: |无法加载 BL4 LAN：
+A modified file was found:\n|发现已修改的文件：\n
+\nThe file was kept. The update did not overwrite external changes.|\n已保留原文件，未覆盖外部修改。
+Update interrupted; some files are locked. Close the game and install again. Backup: |更新中断，部分文件被占用。请关闭游戏后重试。备份： ";
         const string Text=@"Играть|Play
 Настройки|Settings
 Назад|Back

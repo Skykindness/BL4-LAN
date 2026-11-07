@@ -19,7 +19,7 @@ from .party_names import NameBridge
 from .party_settings import DifficultyBridge
 from .fileio import read_request, write_json
 
-__version__ = "0.2.9"
+__version__ = "0.2.12"
 DATA = MODS_DIR.parent / "BL4-LAN-Data"
 try:
     DATA.mkdir(exist_ok=True)
@@ -200,6 +200,22 @@ def sync_party_names(observed, now):
     native_party_names.sync(observed, enabled=mod.is_enabled, role=tracker.role, now=now)
 
 
+def travel_phase(controller):
+    # The SDK's WrappedStruct repr traverses native references. During a
+    # countdown those references can recurse and block the game thread.
+    value = optional_value(controller, "TravelStatus")
+    if type(value) is str:
+        return value[:512]
+    phase = optional_value(value, "status")
+    if isinstance(phase, int):  # UnrealEnum is an IntFlag in the Python SDK.
+        name = optional_value(phase, "name")
+        if type(name) is str:
+            return name[:512]
+        if type(phase) is int:
+            return str(phase)
+    return None
+
+
 def native_details(pc, game_state, driver):
     """Read a small allowlist on the existing game-thread poll, never mutate it."""
     connection = optional_value(driver, "ServerConnection")
@@ -238,7 +254,7 @@ def native_details(pc, game_state, driver):
         target_is_pawn = target is not None and target == pc.Pawn
     except Exception:
         target_class = target_is_pawn = None
-    return dict(travel_status=optional_value(pc, "TravelStatus", evidence_text),
+    return dict(travel_status=travel_phase(pc),
                 camera_target_class=target_class, camera_target_is_pawn=target_is_pawn,
                 realtime_gameplay=optional_value(optional_value(pc,"PlayerState"),"bIsInRealtimeGameplay",bool),
                 player_ids=player_ids if players is not None else None,
@@ -590,7 +606,7 @@ except (OSError, ValueError):
     enable_on_start = False
     record_exception()
 mod = build_mod(name="BL4 LAN", author="skykindness", version=__version__,
-                description="LAN/VPN кооператив. Управление и сообщения — в лаунчере BL4 LAN. F6: хост из игровой локации. F7: вход по сохранённому адресу. F8: состояние. by skykindness",
+                description="LAN/VPN 联机：F6 创建主机，F7 加入，F8 状态。 LAN/VPN кооператив. Управление и сообщения — в лаунчере BL4 LAN. F6: хост из игровой локации. F7: вход по сохранённому адресу. F8: состояние. by skykindness",
                 supported_games=Game.BL4, coop_support=CoopSupport.RequiresAllPlayers, auto_enable=True,
                 settings_file=settings_file, keybinds=[host_key,join_key,state_key],
                 options=[ButtonOption("Создать хост (перезагрузить локацию)",on_press=lambda _:run("host",source="mod_menu")),
