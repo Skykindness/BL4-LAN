@@ -1,36 +1,32 @@
-name: Build and publish release
+name: Manual release reminder
+
 on:
-  push:
-    branches: [main]
-    paths: [release/version.txt]
+
   workflow_dispatch:
+  
 permissions:
-  contents: write
-concurrency:
-  group: publish-release
-  cancel-in-progress: false
+
+  contents: read
+  
 jobs:
-  release:
+
+  manual-upload:
+  
     runs-on: windows-latest
-    timeout-minutes: 15
+    
     steps:
-      - name: Preserve source line endings
+    
+      - name: Manual publication
+      
         shell: pwsh
-        run: git config --global core.autocrlf false
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          persist-credentials: false
-      - name: Build pinned package
-        shell: pwsh
-        run: ./Tools/package-release.ps1
-      - name: Publish archives
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          $version=(Get-Content -LiteralPath release/version.txt -Raw).Trim()
-          gh release view "v$version" --repo $env:GH_REPO *> $null
-          if($LASTEXITCODE -eq 0){throw 'Release already exists; refusing to overwrite it'}
-          gh release create "v$version" "dist-release/BL4-LAN-v$version.zip" "dist-release/BL4-LAN-Source-v$version.zip" dist-release/SHA256SUMS.txt --target $env:GITHUB_SHA --title "BL4 LAN $version - personal difficulty and teammate nameplates" --notes-file RELEASE-NOTES.md
-          if($LASTEXITCODE -ne 0){throw 'Release publication failed'}
+        
+        run: Write-Output 'Release assets are prepared locally. Upload them manually; this workflow never publishes.'
+        
+
+
+
+
+
+
+
+
