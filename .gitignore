@@ -1,0 +1,10 @@
+dist/
+
+dist-release/
+
+__pycache__/
+
+*.pyc
+
+launcher-settings.json
+
