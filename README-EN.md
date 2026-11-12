@@ -1,21 +1,32 @@
-# BL4 LAN 0.2.12 · by skykindness
+# BL4 LAN · by skykindness
 
-[Русский](README-RU.md) · [简体中文](README-ZH-CN.md)
+**0.2.13** · [Русский](README-RU.md) · [简体中文](README-ZH-CN.md)
 
-LAN/VPN co-op for Borderlands 4. Version0.2.12 includes the verified region-transition hang fix and a Simplified Chinese launcher.
+Borderlands 4 co-op over LAN or VPN. The launcher lets you host, join by IP and change your nickname. Version 0.2.13 restores quests and datapads when a newly hosted session discovers a safehouse for the first time. [Download from Releases](https://github.com/Skykindness/BL4-LAN/releases) · [How we found and fixed the bug](https://github.com/Skykindness/BL4-LAN/blob/main/docs/SAFEHOUSE-FIX-EN.md)
 
-1. Close the game on both PCs. Extract the **entire archive**. In BL4-LAN.exe select the game root containing OakGame → Install / update. Install once or after an update.
-2. Use matching game and mod builds. Join the same LAN or Radmin VPN network; with Radmin, use the host's Radmin address.
-3. Both players choose Continue and load their own characters into the world.
-4. The host selects Create host and waits for the area reload. The guest selects Connect and enters the host IP, such as `26.1.2.3:7777`.
-5. Keep the launcher open. Select RU / EN / 简体中文 for its language. Nicknames can be edited in Settings and apply after restarting the game.
+## How to play
 
-Optional console commands: `bl4lan host`, `bl4lan join IP:7777`, `bl4lan status`. Keys: F6 host, F7 join the saved address, F8 status. Exit the text-based mods menu with Q → Enter first.
+1. Close the game on both PCs and extract the **entire** `BL4-LAN-v0.2.13.zip`. Run `BL4-LAN.exe`, select the game folder containing `OakGame` and click **Install / update**. Install once and whenever you update.
+2. Use matching game and mod builds. Join the same local network or Radmin VPN network. On a VPN, use the host's address on that network.
+3. Both players select **Continue** and load their characters into the world. The host selects **Create host** and waits for the area to reload. The guest selects **Connect** and enters the host address, for example `26.1.2.3:7777`. Keep the launcher open.
 
-Personal difficulty: Esc → Session Settings → Difficulty → Apply. The guest's choice is retained on join; loot bonuses and scaling with3–4players remain unverified.
+Choose **RU / EN / 简体中文** in the launcher. You can change your nickname in launcher Settings. Restart the game to apply it.
 
-**Known limits:** discovering a new safehouse in co-op can fail to start its quest or spawn the datapad; this remains unfixed. Upper party avatars/count, the stock “+”, through-wall nameplates and some HUD states remain incomplete. A full campaign and 3–4 players have not been fully validated. Experimental safehouse/pyexec commands are excluded.
+## Hotkeys and commands
 
-For problems: game folder → BL4-LAN-Data → Reports. Share the ZIP from each side; nothing is uploaded automatically. Saves are not included in reports.
+**F6** hosts, **F7** joins the saved address, and **F8** shows status. If the text-based `mods` menu is open in the console, exit it with **Q → Enter**.
 
-[Donate](https://www.donationalerts.com/r/skykindness)
+| Command | Action |
+| --- | --- |
+| `bl4lan host` | Host after loading your character |
+| `bl4lan join IP:7777` | Join the host by address |
+| `bl4lan status` | Show the session status |
+
+## Compatibility and troubleshooting
+
+- Safehouse recovery is enabled only on the tested game build, `Oak2-Win64-4906557`.
+- To set personal difficulty, select **Esc → Session Settings → Difficulty → Apply**. The guest's choice is retained when joining. Rare loot bonuses and scaling for 3–4 players are still unverified.
+- Party avatars and count, the stock “+”, through-wall names and some HUD states have limitations. The full campaign and 3–4 player sessions still need dedicated testing.
+- If you hit an issue, collect the ZIP report from both PCs under `BL4-LAN-Data/Reports` in the game folder. Reports stay local until shared and contain no save files.
+
+[Support the author](https://www.donationalerts.com/r/skykindness)

@@ -8,7 +8,7 @@ foreach($relative in $manifest.Keys){
     $p=Join-Path $root $relative
     if((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant() -ne $manifest[$relative]){throw "Source mismatch: $relative"}
 }
-$mod=@('__init__.py','core.py','runtime.py','fileio.py','party.py','party_memory.py','party_adapter.py','party_probe.py','party_audit.py','party_trace.py','party_names.py','party_settings.py')
+$mod=@('__init__.py','core.py','runtime.py','fileio.py','party.py','party_memory.py','party_adapter.py','party_probe.py','party_audit.py','party_trace.py','party_names.py','party_settings.py','safehouses.py')
 $docs=@('README-RU.md','README-EN.md','README-ZH-CN.md','CHANGELOG-RU.md','LICENSE.txt','SOURCES.md')
 $out=Join-Path $root 'dist-release'
 if(Test-Path -LiteralPath $out){throw 'dist-release already exists; use a fresh source folder'}

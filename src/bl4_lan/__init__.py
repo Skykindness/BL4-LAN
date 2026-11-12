@@ -17,9 +17,10 @@ from .party_memory import ProcessMemory
 from .party_trace import OpTrace
 from .party_names import NameBridge
 from .party_settings import DifficultyBridge
+from .safehouses import SafehouseRecovery
 from .fileio import read_request, write_json
 
-__version__ = "0.2.12"
+__version__ = "0.2.13"
 DATA = MODS_DIR.parent / "BL4-LAN-Data"
 try:
     DATA.mkdir(exist_ok=True)
@@ -356,6 +357,10 @@ def current_state():
         return dict(tracker.current)
     return tracker.observe(inspect_state(), now=time.monotonic())
 
+safehouses = SafehouseRecovery(unrealsdk, get_pc, lambda: getattr(ENGINE.GameViewport, "World", None),
+                              lambda pc: session.gameplay.GetGameState(pc), diagnostic)
+
+
 def run(action, address=None, source="console"):
     global attempt_id, action_source, trace_state_pending
     try:
@@ -413,8 +418,13 @@ def run(action, address=None, source="console"):
         operation_trace.arm(attempt_id)
         trace_state_pending = True
         report(tracker.start(action, address or "", now=time.monotonic()), True)
+        safehouses.cancel()
         with operation_trace.operation('native_travel'):
             if action == "host":
+                try:
+                    safehouses.arm(time.monotonic())
+                except Exception as error:
+                    diagnostic("safehouse_binding_unavailable", error=str(error))
                 session.host()
             else:
                 session.join(address)
@@ -515,6 +525,7 @@ def on_enable():
 
 def on_disable():
     global buddy_context, buddy_next_scan, buddy_signature_valid
+    safehouses.cancel()
     if native_party_bridge is not None:
         native_party_bridge.deactivate()
     if native_personal_settings is not None:
@@ -562,6 +573,11 @@ def poll(obj, args, ret, func):
                     observed = current_state()
             else:
                 observed = current_state()
+            try:
+                safehouses.sync(observed, now)
+            except Exception as error:
+                safehouses.cancel()
+                diagnostic("safehouse_binding_unavailable", error=str(error))
             count = observed.get('player_count')
             try:
                 sync_personal_settings(observed, now=time.monotonic())

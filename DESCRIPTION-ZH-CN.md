@@ -1,15 +1,13 @@
-# BL4 LAN：让《无主之地4》通过局域网 / VPN 联机
+# BL4 LAN ·《无主之地 4》局域网 / VPN 联机
 
-作者：**skykindness** · 版本：**0.2.12**
+作者 **skykindness** · 版本 **0.2.13**
 
-这是一个局域网 / VPN 联机辅助模组及启动器，可创建主机、按IP加入好友、修改昵称并查看连接状态。启动器支持俄语、英语和简体中文。安装完成后无需每次游戏前重复安装。
+BL4 LAN 是一个联机模组和启动器，可创建主机、按 IP 加入好友、修改昵称并查看连接状态。启动器支持俄语、英语和简体中文。可以使用同一局域网，也可以加入同一个 Radmin VPN 网络。
 
-本次更新修复了已复现的区域切换卡死，并加入完整的简体中文启动器界面和使用说明。可以在同一局域网内使用，也可先加入同一个Radmin VPN网络。
+0.2.13 修复了创建主机后首次发现避难所时缺少任务和数据板的问题。修复在已验证的 `Oak2-Win64-4906557` 游戏版本上自动启用。
 
-使用方法：双方安装相同版本 → 在游戏中选择“继续”并进入自己的世界 → 主机点击“创建主机”并等待重载 → 好友输入主机IP连接。原有角色可继续使用，启动器不会合并存档。
+双方安装相同版本后，先在游戏中点击“继续”并进入世界。主机点击“创建主机”并等待重新加载，好友再输入主机 IP 加入。
 
-项目仍有已知问题：新避难所首次发现任务/数据板、部分队伍头像/人数和昵称HUD尚不完善，全流程及3–4人联机尚未全面验证。请先阅读发行包中的README-ZH-CN.md。
+队伍头像和人数、原生“+”按钮和部分 HUD 仍有限制。全流程和 3–4 人联机仍需单独验证。
 
-项目及下载：https://github.com/Skykindness/BL4-LAN/releases
-
-支持作者：https://www.donationalerts.com/r/skykindness
+[项目与下载](https://github.com/Skykindness/BL4-LAN/releases) · [修复记录](https://github.com/Skykindness/BL4-LAN/blob/main/docs/SAFEHOUSE-FIX-ZH-CN.md) · [支持作者](https://www.donationalerts.com/r/skykindness)
